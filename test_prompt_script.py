@@ -1,10 +1,13 @@
 import pytest
-from prompt_script import Flake_Tester
+import csv
+from prompt_script import FlakeTester
 from unittest.mock import patch
+from unittest.mock import MagicMock
+from unittest.mock import AsyncMock
 
 @pytest.fixture
 def easy_tester():
-    easy_tester = Flake_Tester('dummy', 1, 'easy')
+    easy_tester = FlakeTester('dummy', 1, 'easy', AsyncMock())
     return easy_tester
 
 def test_validate_json_easy_ideal(easy_tester):
@@ -20,7 +23,7 @@ def test_validate_json_easy_false(incorrect_output, easy_tester):
 
 @pytest.fixture
 def med_tester():
-    med_tester = Flake_Tester('dummy', 1, 'med')
+    med_tester = FlakeTester('dummy', 1, 'med', MagicMock())
     return med_tester
 
 def test_validate_json_med_ideal(med_tester):
@@ -36,7 +39,7 @@ def test_validate_json_med_false(incorrect_output, med_tester):
 
 @pytest.fixture
 def hard_tester():
-    hard_tester = Flake_Tester('dummy', 1, 'hard')
+    hard_tester = FlakeTester('dummy', 1, 'hard', MagicMock())
     return hard_tester
 
 def test_validate_json_hard_ideal(hard_tester):
@@ -53,7 +56,7 @@ def test_validate_json_hard_false(incorrect_output, hard_tester):
 
 @pytest.fixture
 def efficiency_tester():
-    efficiency_tester = Flake_Tester('dummy', 5, 'easy')
+    efficiency_tester = FlakeTester('dummy', 5, 'easy', MagicMock())
     return efficiency_tester
 
 def test_model_efficiency(efficiency_tester):
@@ -62,18 +65,20 @@ def test_model_efficiency(efficiency_tester):
 
     assert efficiency_tester.model_efficiency(duration_values, count_values) == pytest.approx(60.0)
 
+mock = MagicMock()
+mock.response = '[{"name": "Sarah", "age": 29}]'
+mock.eval_duration = 2000000000
+mock.eval_count = 100
 @pytest.mark.asyncio
-@patch("prompt_script.AsyncClient.generate")
-async def test_generate(mock_generate, easy_tester):
-    dummy_ollama_payload = {"response": '[{"name": "Sarah", "age": 29}]', "eval_duration": 2000000000, "eval_count": 100}
-    mock_generate.return_value = dummy_ollama_payload
 
+async def test_generate(easy_tester):
+
+    easy_tester.client.generate.return_value = mock
     result = await easy_tester.generate()
-
     assert result == ('[{"name": "Sarah", "age": 29}]', 2000000000, 100)
 
 @pytest.mark.asyncio
-@patch("prompt_script.Flake_Tester.generate")
+@patch("prompt_script.FlakeTester.generate", new_callable=AsyncMock)
 async def test_main(mock_generate, tmp_path, monkeypatch, easy_tester):
     monkeypatch.chdir(tmp_path)
 
@@ -82,4 +87,9 @@ async def test_main(mock_generate, tmp_path, monkeypatch, easy_tester):
     await easy_tester.main()
     test_file = tmp_path / "models_info.csv"
 
-    assert test_file.exists()
+    with open(test_file, "r") as file:
+        reader = csv.reader(file)
+        rows = list(reader)
+
+        assert rows[0] == ['Model Name', 'Flake Score', 'Avg. T/s', 'Test Difficulty']
+        assert rows[1] == ['dummy', '0', '50.0', 'easy']

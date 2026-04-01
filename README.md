@@ -1,71 +1,100 @@
 # FlakeTest-AI: Output Reliability Checker
 
-A Local LLM benchmarking tool that validates if the model outputs valid JSON or hallucinates.
+A local LLM benchmarking tool that validates whether a model outputs valid JSON or hallucinates.
 
 ## Project Overview
 
-When an AI model is asked to output valid JSON schemas often times it might hallucinate and include artifact within the schema (such as using markdown).
-If generating large datasets this poses a massive since the data might end up becoming poisoned by the model's hallucination. If this data
-is then used to for training it might result in a vastly inferior output than initially expected.
+When an AI model is asked to output valid JSON schemas, it will often hallucinate and include 
+artefacts within the output (such as markdown formatting or incorrect types). If generating 
+large datasets, this poses a significant risk — poisoned data used for training can result in 
+a vastly inferior model output.
 
-This script aims to run validate a model's JSON output abilities and give it a score based on total prompts ran, and hallucinated outputs. A model scoring 0
-means the model didn't make any mistakes during data generation. Additionally, the script also uses telemetry data to calculate the model's average tokens/sec
-output speed.
+This script validates a model's JSON output reliability and assigns it a flake score based on 
+total prompts run and hallucinated outputs. A score of 0 means the model made no mistakes. The 
+script also uses Ollama telemetry to calculate average tokens/sec generation speed.
 
 ## Tech Stack
 
 ### Python
-The project scripts are coded entirely in Python to make use of its vast array of libraries that helped simplify passing the
-large number of prompts to the selected model and testing the scripts validation techniques.
+Coded entirely in Python. Uses asyncio for concurrent prompt dispatch, Pydantic V2 for strict 
+JSON validation, and argparse for the CLI.
 
 ### Ollama API
-Ollama's API was used to validate that the user has the desired model installed on their device and then ping it for generating the JSON 
-output that'll be tested.
+Used to query locally installed models. The `AsyncClient` is shared across all concurrent tasks 
+for efficient connection management.
 
-### Pydantic
-The `pydantic` library, specifically the `.validate.json()` function they offer was specifically used to test the validdity of the JSON
-schemas outputted by the models.
+### Pydantic V2
+`TypeAdapter.validate_json()` with strict mode is used to validate model outputs against 
+predefined schemas. Schemas are defined per difficulty level in `DIFFICULTY_CONFIG`.
 
 ### Asyncio
-The model's output and generation quality were tested by giving it the same prompt a 100 times. To ensure efficient usage of time the `asyncio` library was used
-to send several requests to the API simultaenously.
+Prompts are dispatched concurrently using `asyncio.gather`. Failed tasks are caught via 
+`return_exceptions=True` and counted as flakes rather than crashing the run.
 
 ### Pytest
-To ensure that the script was able to differentiate between correct JSON schemas and incorrect ones `pytest` was used to check the script throws out invalid JSON schemas.
-The `@pytest.mark.parametrize()` function was used to test a plethora of invalid scenarios such as: markdown generation and missing keys.
+Full async test suite using `pytest` and `pytest-asyncio`. Uses `unittest.mock` with `AsyncMock` 
+to isolate network calls and filesystem operations for deterministic testing.
 
-## Running the Script
+## Prerequisites
 
-### Prerequisites
-* Ensure **Ollama** is installed on your device and running in the background
-* The desired must be downloaded in Ollama or pulled from the terminal(e.g. `ollama pull qwen3:1.7b`)
+### Ollama Setup
 
-### Installations
-* Ensure you have **Python 3.10** or higher installed.
-* The script depends on a few key libraries ensure you have the following installed before running the scipt:
-`pip install pydantic>=2.0.0 ollama pytest pytest-asyncio`
+**Linux:** Ollama does not run as a GUI. Start the server manually in a terminal before 
+running the script and keep it running:
+```
+ollama serve
+```
 
-## Usage (Command Line Interface)
+**Windows/macOS:** The Ollama desktop application handles this automatically.
 
-The script is executed via the command line. It utilises the `argparse` library to allow users to easily configure their benchmarking parameters without altering the code. The following flags are available:
+Pull the desired model before running:
+```
+ollama pull qwen3:1.7b
+```
 
-* `--model`: Specifies the local LLM to be tested. (Default: `qwen3:1.7b`)
-* `--run`: Sets the total number of prompts the model should generate during the test. (Default: `100`)
-* `--difficulty`: Determines the complexity of the JSON schema the model is required to output. Available options are `easy`, `med`, and `hard`. (Default: `easy`)
+### Python Dependencies
 
-**Example Command:**
-`python prompt_script.py --model qwen3:1.7b --run 100 --difficulty hard`
+Python 3.10 or higher required. Install dependencies:
+```
+pip install -r requirements.txt
+```
+
+## Usage
+```
+python prompt_script.py --model qwen3:1.7b --run 100 --difficulty hard
+```
+
+### CLI Flags
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--model` | Ollama model to test | `qwen3:1.7b` |
+| `--run` | Number of prompts to generate | `100` |
+| `--difficulty` | Schema complexity: `easy`, `med`, `hard` | `med` |
 
 ## Evaluation Metrics
 
-* **Flake Score:** This calculates the total number of times the model failed to output a valid JSON schema. By utilising Pydantic V2's Strict Mode, the script mercilessly catches common AI hallucinations. This includes missing keys, improper type coercion (such as outputting a string "90" instead of an integer 90), and "Markdown Traps" where the model wraps the JSON in standard markdown formatting.
+**Flake Score:** Total number of outputs that failed strict Pydantic V2 validation. Catches 
+missing keys, type coercion errors (e.g. `"90"` instead of `90`), and markdown wrapping. 
+Network failures are also counted as flakes.
 
-* **Average T/s (Tokens per Second):** This calculates the model's generation efficiency. The script extracts the eval_duration (provided in nanoseconds by the Ollama API) and converts it into standard seconds (multiplying by 10^-9) before dividing the total eval_count (tokens) by this duration. The framework also includes a safeguard to drop the iteration count and prevent zero-division errors if the API crashes or returns an empty payload.
+**Average T/s:** Model generation speed calculated from Ollama's `eval_count` (tokens) and 
+`eval_duration` (nanoseconds). Tasks with zero duration are excluded to prevent division errors.
 
-* **Data Logging:** Upon completion, the script logs the test results, including the model name, difficulty level, total iterations, average T/s, and final Flake Score. This data is dynamically appended to a models_info.csv file for easy academic review and comparison.
+**CSV Logging:** Results are appended to `models_info.csv` with columns: Model Name, Flake 
+Score, Avg. T/s, Test Difficulty.
 
-## Testing Methodology
+## Running the Test Suite
+```
+python -m pytest test_prompt_script.py -v
+```
 
-To ensure high software reliability and accuracy in the benchmarking math, the framework is backed by a fully automated, asynchronous test suite using `pytest`.
-
-The validation logic is rigorously tested using `@pytest.mark.parametrize` to feed the system a plethora of targeted "Flake Vectors" (e.g., hallucinated strings, markdown traps, or malformed data) to guarantee the strict validation catches errors as intended. Furthermore, the suite employs `unittest.mock` to intercept network calls and isolate the file-system. This allows for deterministic math and integration testing without actually pinging the Ollama API or overwriting the real CSV data.
+## Project Structure
+```
+AI_Flake_Tester/
+├── prompt_script.py        # Main benchmarking script
+├── test_prompt_script.py   # Test suite
+├── requirements.txt        
+├── models_info.csv         # Generated on first run
+└── README.md
+```
