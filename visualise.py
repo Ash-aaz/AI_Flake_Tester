@@ -22,7 +22,7 @@ latency_df = latency_df.dropna(subset=['P95 Latency', 'P99 Latency'])
 
 fig = plotly.subplots.make_subplots(rows=3, cols=1, subplot_titles=("Flake Score", "Avg T/s", "P95 vs P99 Latency"))
 
-df['Models'] = df['Model Name'] + ' (' + df['Test Difficulty'] + ', runs=' + df['Total Runs'].astype(str) + ')'
+df['Models'] = df['Model Name'].astype(str) + ' (' + df['Test Difficulty'].astype(str) + ', runs=' + df['Total Runs'].astype(int).astype(str) + ')'
 
 flake_trace = go.Bar(x=df['Models'], y=df['Flake Score'], name='Flake Score')
 tokens_trace = go.Bar(x=df['Models'], y=df['Avg. T/s'], name='Avg. T/s')

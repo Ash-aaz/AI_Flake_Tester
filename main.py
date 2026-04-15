@@ -257,7 +257,7 @@ class FlakeTester:
                           "N/A", "N/A", memory_usage]
             
             else:
-                model_data = [self.agent, flake_counter, avg_tps, self.prompt_difficulty,
+                model_data = [self.agent, self.total_count, flake_counter, avg_tps, self.prompt_difficulty,
                           percentiles[0], percentiles[1], memory_usage]
 
             self.add_data(column_name, model_data)
