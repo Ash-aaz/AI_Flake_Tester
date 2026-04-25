@@ -1,6 +1,6 @@
 import pytest
 from calculations import validate_json, model_efficiency, calculate_percentiles
-from main import Logs, Memo, Breach, Report
+from config import Logs, Memo, Breach, Report
 from pydantic import TypeAdapter
 
 def test_validate_json_easy_ideal():

@@ -1,5 +1,6 @@
 models_info.csv
 results.html
+rag_benchmark.pdf
 __pycache__/
 *.pyc
 .pytest_cache/
