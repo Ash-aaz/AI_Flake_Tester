@@ -1,6 +1,7 @@
 import pytest
 import pandas as pd
 
+# Mock data for testing
 @pytest.fixture
 def dummy_dataframe():
     dummy_data = {
@@ -11,16 +12,20 @@ def dummy_dataframe():
     'Test Difficulty': ['ultra', 'ultra', 'ultra'],
     'P95 Latency': [8.56503722995, 'N/A', 'N/A'],
     'P99 Latency': [13.355484342130001, 'N/A', 'N/A'],
-    'Memory Usage (MB)': [54.75, 54.2109375, 55.77734375]
+    'Memory Usage (MB)': [54.75, 54.2109375, 55.77734375],
+    'Max Error Type': ['literal_error', 'missing', 'literal_error'],
+    'Error Count': [45, 12, 9]
     }
 
     df = pd.DataFrame(dummy_data)
     return df
 
+# Verify the labels for each bar are created properly
 def test_label_creation(dummy_dataframe):
     dummy_dataframe['Models'] = dummy_dataframe['Model Name'] + ' (' + dummy_dataframe['Test Difficulty'] + ', runs=' + dummy_dataframe['Total Runs'].astype(str) + ')'
     assert dummy_dataframe['Models'].tolist() == ["qwen3:1.7b (ultra, runs=100)", "gemma4:e4b (ultra, runs=30)", "qwen3.5:9b (ultra, runs=30)"]
 
+# Verify that data is filtered properly
 def test_filtering(dummy_dataframe):
     filtered_df = dummy_dataframe.copy()
 

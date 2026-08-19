@@ -1,24 +1,33 @@
 import statistics
 import logging
 from pydantic import ValidationError
+from config import ValidationOutput
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-
+# Models can output JSON not following schema. Function validates all outputs
 def validate_json(json_outputs: list, schema_adapter):
-        flake_counter = 0
+        errors = ValidationOutput(flake_counter=0, error_distribution={}, failed_outputs=[])
 
         for output in json_outputs:
             try:
                 schema_adapter.validate_json(output, strict=True)
-            except ValidationError:
-                flake_counter += 1
-    
-        logger.info("Flake Counter = %s", flake_counter)
 
-        return flake_counter
+            # Collect error types to document where models might be failing
+            except ValidationError as err:
+                errors.flake_counter += 1
+                error_list = err.errors()
+                for e in error_list:
+                    errors.error_distribution[e['type']] = errors.error_distribution.get(e['type'], 0) + 1
+                    errors.failed_outputs.append(output)
 
+        # Log info
+        logger.info("Flake Counter = %s", errors.flake_counter)
+        logger.info("Errors Observed: %s", dict(errors.error_distribution))
+
+        return errors
+
+# Provided comparitive data as to how RAG can affect a model's speed
 def model_efficiency(duration_values: list, count_values: list):
     i = 0
     total_tps = 0
@@ -40,7 +49,8 @@ def model_efficiency(duration_values: list, count_values: list):
         avg_tps = total_tps / current_count
         logger.info("Model's average token generation speed is: %s", avg_tps)
         return avg_tps
-        
+
+# Accounts for outliers unlike averages. Requires 100+ runs        
 def calculate_percentiles(duration_values: list):
     if (len(duration_values) < 100):
         return (None, None)

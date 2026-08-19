@@ -4,3 +4,9 @@ rag_benchmark.pdf
 __pycache__/
 *.pyc
 .pytest_cache/
+.venv
+old_data.csv
+logs/base/*
+logs/rag/*
+!logs/base/.gitkeep
+!logs/rag/.gitkeep

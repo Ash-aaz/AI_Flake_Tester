@@ -13,7 +13,6 @@ from calculations import validate_json, model_efficiency, calculate_percentiles
 from config import DIFFICULTY_CONFIG
 import logging
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
@@ -26,6 +25,7 @@ class RAGBenchMark:
         self.client = client
         self.file_path = pdf
 
+    # Extract text from provided PDF in chunks
     def chunk_creator(self, file_path):
         reader = PdfReader(file_path)
         extracted_text = ""
@@ -40,6 +40,7 @@ class RAGBenchMark:
         del chunks[0]
         return chunks
 
+    # Embed chunk via nomic and create a FAISS index for retrieval
     def build_index(self, file_path):
         chunks = self.chunk_creator(file_path)
         embedded_chunks = []
@@ -53,7 +54,8 @@ class RAGBenchMark:
 
         index.add(embedded_array)
         return [index, chunks]
-    
+
+    # Retrieve most relevant index via FAISS similarity search and inject to prompt
     def prompt_injector(self, index, chunks):
         prompt = DIFFICULTY_CONFIG[self.prompt_difficulty]['prompt']
         embedded_prompt = ollama.embed('nomic-embed-text:v1.5', prompt)['embeddings'][0]
@@ -63,12 +65,14 @@ class RAGBenchMark:
         injected_prompt = prompt + chunks[matching_chunk]
 
         return injected_prompt
-    
+
+    # Wait for model's response then return all relevant data as a tuple
     async def generate(self, message):
         async with self.semaphore:
-            response = await self.client.generate(model=self.agent, prompt=message)
-            return (response.response, response.eval_duration, response.eval_count)
-    
+            response = await self.client.generate(model=self.agent, prompt=message, options={"num_ctx": 20000})
+            return (response.response, response.eval_duration, response.eval_count, response.thinking)
+
+    # Add collected data to CSV file for easier access
     def add_data(self, column_name, model_data):
         if os.path.isfile('models_info.csv'):
                 with open('models_info.csv', 'a', newline='') as file:
@@ -96,6 +100,7 @@ class RAGBenchMark:
         valid_results = []
 
         for values in results:
+            # Increment flake counter if the model failed to generate a response
             if isinstance(values, Exception):
                 flake_counter += 1
             else:
@@ -105,35 +110,54 @@ class RAGBenchMark:
             logger.info("No valid results found")
             return 0
         else:
-            json_outputs, duration_outputs, count_outputs = zip(*valid_results)
+            json_outputs, duration_outputs, count_outputs, thinking_response = zip(*valid_results)
+            # Log thinking and eval_counts to log file for future reference
+            for i in range(len(json_outputs)):
+                logger.info("Eval Count: %s", count_outputs[i])
+                if thinking_response[i]: 
+                    logger.info("Thinking: %s", thinking_response[i][:500])
 
         logger.info("Data Generated: %s", len(valid_results))
 
         adapter = DIFFICULTY_CONFIG[self.prompt_difficulty]['schema']
 
-        flake_counter += validate_json(json_outputs, adapter)
+        # Validate outputs and gather quantifiable data
+        output_errors = validate_json(json_outputs=json_outputs, schema_adapter=adapter)
+        flake_counter += output_errors.flake_counter
+        if not output_errors.error_distribution:
+            max_error_type = "N/A"
+            max_error_count = "N/A"
+        else:
+            max_error_type = max(output_errors.error_distribution, key=output_errors.error_distribution.get)
+            max_error_count = output_errors.error_distribution[max_error_type]
+
         avg_tps = model_efficiency(duration_outputs, count_outputs)
         percentiles = calculate_percentiles(duration_outputs)
+
+        # Log all failed outputs for future reference
+        for fail in output_errors.failed_outputs:
+            logger.info(fail)
 
         if avg_tps == 0:
             return None
         else:
+            # Create columns and add row to CSV file
             column_name = ["Model Name", "Total Runs", "Flake Score", "Avg. T/s", "Test Difficulty",
-                           "P95 Latency", "P99 Latency", "Memory Usage (MB)"]
+                           "P95 Latency", "P99 Latency", "Memory Usage (MB)", "Max Error Type", "Error Count"]
             model = self.agent + " (RAG)"
             
-            if percentiles[0] == None:
+            if percentiles[0] is None:
                 model_data = [model, self.total_count, flake_counter, avg_tps, self.prompt_difficulty,
-                          "N/A", "N/A", memory_usage]
+                          "N/A", "N/A", memory_usage, max_error_type, max_error_count]
             
             else:
                 model_data = [model, self.total_count, flake_counter, avg_tps, self.prompt_difficulty,
-                          percentiles[0], percentiles[1], memory_usage]
+                          percentiles[0], percentiles[1], memory_usage, max_error_type, max_error_count]
 
             self.add_data(column_name, model_data)
 
 if __name__ == "__main__":
-
+    # CLI arguments
     parser = argparse.ArgumentParser(
             prog = 'AI Flake Tester w/ RAG',
             description = 'Tests JSON output schema formatting of AI models with RAG prompt injection',
@@ -146,6 +170,10 @@ if __name__ == "__main__":
     parser.add_argument('--pdf', default='rag_benchmark.pdf', help="Add the pdf path for RAG")
 
     args = parser.parse_args()
+
+    logs_file = args.model.replace("/", "_").replace(":", "_") + "_" + args.difficulty + "_RAG.log"
+    logging.basicConfig(level=logging.INFO, filename=f'logs/rag/{logs_file}', format='%(asctime)s [%(levelname)s] %(message)s')
+    logging.getLogger("httpx").setLevel(logging.WARNING)
 
     tester = RAGBenchMark(args.model, args.run, args.difficulty, args.concurrency, AsyncClient(), args.pdf)
     asyncio.run(tester.main())

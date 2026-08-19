@@ -1,7 +1,8 @@
 import datetime as dt
 from typing_extensions import TypedDict, Literal, Optional
-from pydantic import TypeAdapter
+from pydantic import TypeAdapter, BaseModel
 
+# Schemas for various difficulty JSONs
 class Incidents(TypedDict):
     server: str
     downtime_minutes: int
@@ -79,6 +80,13 @@ class Report(TypedDict):
     events: list[Events]
     reported_by: Reported
 
+# Custom struct for validation outputs
+class ValidationOutput(BaseModel):
+    flake_counter: int
+    error_distribution: dict[str, int]
+    failed_outputs: list[str]
+
+# Maps difficulty tier to prompt and schema. Adding or modifying difficulty tiers happens here
 DIFFICULTY_CONFIG = {
         'easy': {
             'prompt': """You are a strict data extraction API.
@@ -86,7 +94,7 @@ DIFFICULTY_CONFIG = {
                 Schema: Return a single JSON object (dictionary). It must contain exactly two keys:
                     "log_id" (a string)
                     "incidents" (a list of dictionaries). Each dictionary in this list must have: "server" (string), "downtime_minutes" (integer), and "critical" (boolean).
-                Input Text: Log ID: REP-9981. Yesterday at 0400 hours, Alpha-Node went down for exactly an hour and a half. 
+                Input Text: Log ID: REP-7743. Yesterday at 0400 hours, Alpha-Node went down for exactly an hour and a half. 
                 It took down the Payment Gateway. Total critical failure. Then, Beta-Node stuttered. It was only offline for 15 minutes, taking down the Notification pipeline. 
                 Not critical, just annoying. Also, reminder to order more coffee for the breakroom, we are completely out.
                 Strict Constraint: Output ONLY valid JSON. Do not include markdown formatting like ```json. Do not include any conversational text.""",
